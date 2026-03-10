@@ -27,6 +27,8 @@
 - Fix warnings for unsupported token $type (by @Dexterity104) [Github #8790](https://github.com/penpot/penpot/issues/8790)
 - Add per-group add button for typographies (by @eureka928) [Github #5275](https://github.com/penpot/penpot/issues/5275)
 - Use page name for multi-export ZIP/PDF downloads (by @Dexterity104) [Github #8773](https://github.com/penpot/penpot/issues/8773)
+- Add page separators in Workspace [Taiga #13611](https://tree.taiga.io/project/penpot/us/13611?milestone=262806)
+
 
 ### :bug: Bugs fixed
 

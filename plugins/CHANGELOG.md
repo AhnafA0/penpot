@@ -7,6 +7,7 @@
 - **plugin-types**: Change return type of `combineAsVariants`
 - **plugin-types**: Added `textBounds` property for text shapes
 - **plugin-types**: Added flag `throwValidationErrors` to enable exceptions on validation
+- **plugin-types**: Added `waitForLayoutUpdate` for synchronously wait for layout updates
 
 ## 1.4.2 (2026-01-21)
 

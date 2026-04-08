@@ -1412,29 +1412,14 @@ impl RenderState {
         performance::begin_measure!("render_from_cache");
         let scale = self.get_cached_scale();
 
-        // Prefer the persistent 1:1 atlas for fast pan/zoom-out.
-        if self.surfaces.has_atlas() {
-            self.surfaces.draw_atlas_to_target(
-                self.viewbox,
-                self.options.dpr(),
-                self.background_color,
-            );
-
-            if self.options.is_debug_visible() {
-                debug::render(self);
-            }
-
-            ui::render(self, shapes);
-            debug::render_wasm_label(self);
-            self.flush_and_submit();
-
-            performance::end_measure!("render_from_cache");
-            performance::end_timed_log!("render_from_cache", _start);
-            return;
-        }
-
         // Check if we have a valid cached viewbox (non-zero dimensions indicate valid cache)
         if self.cached_viewbox.area.width() > 0.0 {
+            // For zoom-in, the best fast-path is to reproject the cached frame
+            // (viewport-sized) with a matrix. This avoids depending on atlas
+            // resolution (which may be downscaled for huge documents) and avoids
+            // any tile/atlas composition.
+            let zooming_in = self.viewbox.zoom > self.cached_viewbox.zoom;
+
             // Scale and translate the target according to the cached data
             let navigate_zoom = self.viewbox.zoom / self.cached_viewbox.zoom;
 
@@ -1472,6 +1457,31 @@ impl RenderState {
             ui::render(self, shapes);
             debug::render_wasm_label(self);
 
+            self.flush_and_submit();
+
+            // For zoom-in we are done: the transformed cache is the intended preview.
+            // For pan/zoom-out we continue below and may prefer the atlas when present.
+            if zooming_in {
+                performance::end_measure!("render_from_cache");
+                performance::end_timed_log!("render_from_cache", _start);
+                return;
+            }
+        }
+
+        // Prefer the persistent atlas for fast pan/zoom-out (and when cache is invalid).
+        if self.surfaces.has_atlas() {
+            self.surfaces.draw_atlas_to_target(
+                self.viewbox,
+                self.options.dpr(),
+                self.background_color,
+            );
+
+            if self.options.is_debug_visible() {
+                debug::render(self);
+            }
+
+            ui::render(self, shapes);
+            debug::render_wasm_label(self);
             self.flush_and_submit();
         }
         performance::end_measure!("render_from_cache");

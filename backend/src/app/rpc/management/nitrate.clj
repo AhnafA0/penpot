@@ -16,6 +16,7 @@
    [app.common.uuid :as uuid]
    [app.config :as cf]
    [app.db :as db]
+   [app.media :as media]
    [app.msgbus :as mbus]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.files :as files]
@@ -97,28 +98,25 @@
 
 (def ^:private schema:upload-org-logo
   [:map
-   [:logo-data ::sm/text]
-   [:logo-mime-type ::sm/text]])
+   [:content media/schema:upload]])
 
 (def ^:private schema:upload-org-logo-result
-  [:map [:logo-url ::sm/text]])
+  [:map [:id ::sm/uuid]])
 
 (sv/defmethod ::upload-org-logo
-  "Store an organization logo in penpot storage and return its public URL"
+  "Store an organization logo in penpot storage and return its ID"
   {::doc/added "2.16"
    ::sm/params schema:upload-org-logo
    ::sm/result schema:upload-org-logo-result
    ::rpc/auth false}
-  [{:keys [::sto/storage]} {:keys [logo-data logo-mime-type]}]
-  (let [data    (.decode (java.util.Base64/getDecoder) ^String logo-data)
-        hash    (sto/calculate-hash data)
-        content (-> (sto/content data)
-                    (sto/wrap-with-hash hash))
-        obj     (sto/put-object! storage {::sto/content     content
-                                          ::sto/deduplicate? true
-                                          :bucket            "org-logo"
-                                          :content-type      logo-mime-type})]
-    {:logo-url (files/resolve-public-uri (:id obj))}))
+  [{:keys [::sto/storage]} {:keys [content]}]
+  (let [hash (sto/calculate-hash (:path content))
+        data (-> (sto/content (:path content))
+                 (sto/wrap-with-hash hash))
+        obj  (sto/put-object! storage {::sto/content      data
+                                       ::sto/deduplicate? true
+                                       :content-type      (:mtype content)})]
+    {:id (:id obj)}))
 
 ;; ---- API: notify-team-change
 

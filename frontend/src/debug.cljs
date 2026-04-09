@@ -170,6 +170,50 @@
         (js/console.warn "[debug] render-wasm module not ready or missing _debug_atlas_rect_base64")
         ""))))
 
+(defn ^:export wasmZoomAtlasConsole
+  "Logs the current render-wasm zoom_atlas as an image in the JS console (if present)."
+  []
+  (let [module wasm/internal-module
+        f      (when module (unchecked-get module "_debug_zoom_atlas_console"))]
+    (if (fn? f)
+      (wasm.h/call module "_debug_zoom_atlas_console")
+      (js/console.warn "[debug] render-wasm module not ready or missing _debug_zoom_atlas_console"))))
+
+(defn ^:export wasmZoomAtlasBase64
+  "Returns the zoom_atlas PNG base64 (empty string if missing/empty)."
+  []
+  (let [module wasm/internal-module
+        f      (when module (unchecked-get module "_debug_zoom_atlas_base64"))]
+    (if (fn? f)
+      (let [ptr (wasm.h/call module "_debug_zoom_atlas_base64")
+            s   (or (wasm-read-len-prefixed-utf8 ptr) "")]
+        s)
+      (do
+        (js/console.warn "[debug] render-wasm module not ready or missing _debug_zoom_atlas_base64")
+        ""))))
+
+(defn ^:export wasmCacheConsole
+  "Logs the current render-wasm cache surface as an image in the JS console."
+  []
+  (let [module wasm/internal-module
+        f      (when module (unchecked-get module "_debug_cache_console"))]
+    (if (fn? f)
+      (wasm.h/call module "_debug_cache_console")
+      (js/console.warn "[debug] render-wasm module not ready or missing _debug_cache_console"))))
+
+(defn ^:export wasmCacheBase64
+  "Returns the cache surface PNG base64 (empty string if missing/empty)."
+  []
+  (let [module wasm/internal-module
+        f      (when module (unchecked-get module "_debug_cache_base64"))]
+    (if (fn? f)
+      (let [ptr (wasm.h/call module "_debug_cache_base64")
+            s   (or (wasm-read-len-prefixed-utf8 ptr) "")]
+        s)
+      (do
+        (js/console.warn "[debug] render-wasm module not ready or missing _debug_cache_base64")
+        ""))))
+
 (when (exists? js/window)
   (set! (.-dbg ^js js/window) json/->js)
   (set! (.-pp ^js js/window) pprint))

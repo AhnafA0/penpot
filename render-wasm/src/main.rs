@@ -947,6 +947,47 @@ pub extern "C" fn debug_atlas_rect_base64(x: f32, y: f32, w: f32, h: f32) -> Res
     })
 }
 
+#[no_mangle]
+#[wasm_error]
+pub extern "C" fn debug_cache_console() -> Result<()> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use crate::run_script;
+        with_state_mut!(state, {
+            let b64 = state
+                .render_state_mut()
+                .surfaces
+                .base64_snapshot(crate::render::SurfaceId::Cache)?;
+
+            if b64.is_empty() {
+                run_script!("console.log('[render-wasm] cache: <empty>')".to_string());
+            } else {
+                run_script!(format!("console.log('%c ', 'font-size: 1px; background: url(data:image/png;base64,{b64}) no-repeat; padding: 256px; background-size: contain;')"));
+            }
+        });
+    }
+    Ok(())
+}
+
+/// Returns `[u32 byte_len][utf8 bytes...]` with the base64 PNG of the cache surface.
+#[no_mangle]
+#[wasm_error]
+pub extern "C" fn debug_cache_base64() -> Result<*mut u8> {
+    with_state_mut!(state, {
+        let b64 = state
+            .render_state_mut()
+            .surfaces
+            .base64_snapshot(crate::render::SurfaceId::Cache)?;
+
+        let bytes = b64.as_bytes();
+        let len = bytes.len() as u32;
+        let mut buf = Vec::with_capacity(4 + bytes.len());
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(bytes);
+        Ok(mem::write_bytes(buf))
+    })
+}
+
 fn main() {
     #[cfg(target_arch = "wasm32")]
     init_gl!();

@@ -80,6 +80,7 @@
   (ptk/reify ::apply-changes-localy
     ptk/UpdateEvent
     (update [_ state]
+      (.log js/console "apply-changes-localy" (clj->js redo-changes))
       (let [undo-changes
             (if pending
               (->> pending

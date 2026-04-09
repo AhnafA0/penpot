@@ -7,6 +7,8 @@
 (ns app.plugins.api
   "RPC for plugins runtime."
   (:require
+   [app.main.data.workspace.wasm-text :as dwwt]
+   [app.main.data.workspace.shape-layout :as dwsl]
    [app.common.data :as d]
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
@@ -666,8 +668,18 @@
                        (rx/delay timeout))
                   (rx/empty))
 
-                ;; TODO: Wait for the layout to update
-              ])
+                (if @dwsl/layout-pending
+                  (->> @st/stream
+                       (rx/filter (ptk/type? :dwsl/update-layout-positions))
+                       (rx/take 1))
+                  (rx/empty))
+
+                (if @dwwt/resize-pending
+                  (->> @st/stream
+                       (rx/filter (ptk/type? :app.main.data.workspace.modifiers/apply-wasm-modifiers))
+                       (rx/take 1))
+                  (rx/empty))
+                ])
               (rx/take 1)
               (rx/subs!
                (fn [value]

@@ -508,6 +508,10 @@ impl Surfaces {
         );
     }
 
+    pub fn cache_dimensions(&self) -> skia::ISize {
+        skia::ISize::new(self.cache.width(), self.cache.height())
+    }
+
     pub fn apply_mut(&mut self, ids: u32, mut f: impl FnMut(&mut skia::Surface)) {
         performance::begin_measure!("apply_mut::flags");
         if ids & SurfaceId::Target as u32 != 0 {

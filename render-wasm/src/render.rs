@@ -1412,6 +1412,7 @@ impl RenderState {
         performance::begin_measure!("render_from_cache");
         let scale = self.get_cached_scale();
 
+        println!("render_from_cache");
         // Check if we have a valid cached viewbox (non-zero dimensions indicate valid cache)
         if self.cached_viewbox.area.width() > 0.0 {
             // For zoom-in, the best fast-path is to reproject the cached frame
@@ -1435,6 +1436,61 @@ impl RenderState {
             let translate_y = (start_tile_y as f32 * tiles::TILE_SIZE) - offset_y;
             let bg_color = self.background_color;
 
+            // For zoom-out, prefer cache only if it fully covers the viewport.
+            // Otherwise, atlas will provide a more correct full-viewport preview.
+            let zooming_out = self.viewbox.zoom < self.cached_viewbox.zoom;
+            if zooming_out {
+                let cache_dim = self.surfaces.cache_dimensions();
+                let cache_w = cache_dim.width as f32;
+                let cache_h = cache_dim.height as f32;
+
+                // Viewport in target pixels.
+                let vw = (self.viewbox.width * self.options.dpr()).max(1.0);
+                let vh = (self.viewbox.height * self.options.dpr()).max(1.0);
+
+                // Inverse-map viewport corners into cache coordinates.
+                // target = (cache * navigate_zoom) translated by (translate_x, translate_y) (in cache coords).
+                // => cache = (target / navigate_zoom) - translate
+                let inv = if navigate_zoom.abs() > f32::EPSILON {
+                    1.0 / navigate_zoom
+                } else {
+                    0.0
+                };
+
+                let cx0 = (0.0 * inv) - translate_x;
+                let cy0 = (0.0 * inv) - translate_y;
+                let cx1 = (vw * inv) - translate_x;
+                let cy1 = (vh * inv) - translate_y;
+
+                let min_x = cx0.min(cx1);
+                let min_y = cy0.min(cy1);
+                let max_x = cx0.max(cx1);
+                let max_y = cy0.max(cy1);
+
+                let cache_covers = min_x >= 0.0 && min_y >= 0.0 && max_x <= cache_w && max_y <= cache_h;
+                println!("cache_covers: {}", cache_covers);
+                if !cache_covers {
+                    // Early return only if atlas exists; otherwise keep cache path.
+                    if self.surfaces.has_atlas() {
+                        self.surfaces.draw_atlas_to_target(
+                            self.viewbox,
+                            self.options.dpr(),
+                            self.background_color,
+                        );
+
+                        if self.options.is_debug_visible() {
+                            debug::render(self);
+                        }
+
+                        ui::render(self, shapes);
+                        debug::render_wasm_label(self);
+                        self.flush_and_submit();
+                        println!("atlas drawn");
+                        return;
+                    }
+                }
+            }
+
             // Setup canvas transform
             {
                 let canvas = self.surfaces.canvas(SurfaceId::Target);
@@ -1445,6 +1501,7 @@ impl RenderState {
             }
 
             // Draw directly from cache surface, avoiding snapshot overhead
+            println!("drawn from cache");
             self.surfaces.draw_cache_to_target();
 
             // Restore canvas state
@@ -1458,32 +1515,8 @@ impl RenderState {
             debug::render_wasm_label(self);
 
             self.flush_and_submit();
-
-            // For zoom-in we are done: the transformed cache is the intended preview.
-            // For pan/zoom-out we continue below and may prefer the atlas when present.
-            if zooming_in {
-                performance::end_measure!("render_from_cache");
-                performance::end_timed_log!("render_from_cache", _start);
-                return;
-            }
         }
 
-        // Prefer the persistent atlas for fast pan/zoom-out (and when cache is invalid).
-        if self.surfaces.has_atlas() {
-            self.surfaces.draw_atlas_to_target(
-                self.viewbox,
-                self.options.dpr(),
-                self.background_color,
-            );
-
-            if self.options.is_debug_visible() {
-                debug::render(self);
-            }
-
-            ui::render(self, shapes);
-            debug::render_wasm_label(self);
-            self.flush_and_submit();
-        }
         performance::end_measure!("render_from_cache");
         performance::end_timed_log!("render_from_cache", _start);
     }

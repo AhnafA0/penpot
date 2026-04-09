@@ -1564,6 +1564,12 @@ impl RenderState {
         performance::begin_measure!("start_render_loop");
 
         self.reset_canvas();
+        // `Surfaces::reset()` intentionally preserves `Cache` so `render_from_cache` can
+        // reuse it during interactions. But when starting a full-quality render we must
+        // clear Cache, otherwise stale pixels can survive in areas not overwritten yet.
+        if !self.options.is_fast_mode() {
+            self.surfaces.clear_cache(self.background_color);
+        }
         let surface_ids = SurfaceId::Strokes as u32
             | SurfaceId::Fills as u32
             | SurfaceId::InnerShadows as u32

@@ -282,9 +282,11 @@
 
                       (throw (ex-info "Invalid result from update function" {:result result})))]
 
-                (reduce update-shape-recursive
-                        container'
-                        (:shapes shape)))))]
+                (if (= result :remove)
+                  container'
+                  (reduce update-shape-recursive
+                          container'
+                          (:shapes shape))))))]
 
     (let [root-id (if (ctn/page? container)
                     uuid/zero

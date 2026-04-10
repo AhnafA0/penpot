@@ -329,7 +329,7 @@
                     :component-id (:component-id ref-shape)))))
 
 (defn- check-ref-component-id
-  "Validate that if the copy has not been swwpped, the component-id and component-file are
+  "Validate that if the copy has not been swapped, the component-id and component-file are
    the same as in the referenced shape in the near main."
   [shape file page libraries]
   (when (nil? (ctk/get-swap-slot shape))
@@ -377,7 +377,7 @@
       (report-error :missing-slot
                     "Shape has been swapped, should have swap slot"
                     shape file page
-                    :swap-slot (or (ctk/get-swap-slot near-match) (:id shape))))))
+                    :swap-slot (or (ctk/get-swap-slot near-match) (:id near-match))))))
 
 (defn- check-valid-touched
   "Validate that the text touched flags are coherent."

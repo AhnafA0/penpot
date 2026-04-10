@@ -5,12 +5,11 @@
 ;; Copyright (c) KALEIDOS INC
 
 (ns app.common.files.comp-processors
+  "Repair, migration or transformation utilities for components."
   (:require
    [app.common.logging :as log]
    [app.common.types.component :as ctk]
    [app.common.types.file :as ctf]))
-
-"Repair, migration or transformation utilities for components."
 
 (log/set-level! :warn)
 

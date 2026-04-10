@@ -162,8 +162,9 @@
   "Check if some attribute is one that is involved in component syncrhonization.
    Note that design tokens also are involved, although they go by an alternate
    route and thus they are not part of :sync-attrs.
-   Also when detaching a nested copy or it also needs to trigger a synchronization,
-   even though :shape-ref or :component-id are not synced attribute per se"
+   Also when detaching a nested copy it also needs to trigger a synchronization,
+   even though :shape-ref, :component-id or :component-file are not synced
+   attributes per se."
   [attr]
   (or (contains? sync-attrs attr)
       (= :shape-ref attr)

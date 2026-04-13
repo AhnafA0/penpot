@@ -581,26 +581,16 @@ impl Surfaces {
         self.tiles.remove(tile);
     }
 
-    /// Draws a cached tile image to the target.
-    pub fn draw_cached_tile_surface(
-        &mut self,
-        tile: Tile,
-        target_rect: skia::Rect,
-        color: skia::Color,
-    ) {
+    pub fn draw_cached_tile_surface(&mut self, tile: Tile, rect: skia::Rect, color: skia::Color) {
         if let Some(image) = self.tiles.get(tile) {
-            let img: &skia::Image = &*image;
             let mut paint = skia::Paint::default();
             paint.set_color(color);
 
-            self.target.canvas().draw_rect(target_rect, &paint);
+            self.target.canvas().draw_rect(rect, &paint);
 
-            self.target.canvas().draw_image_rect(
-                img,
-                None,
-                target_rect,
-                &skia::Paint::default(),
-            );
+            self.target
+                .canvas()
+                .draw_image_rect(&image, None, rect, &skia::Paint::default());
         }
     }
 

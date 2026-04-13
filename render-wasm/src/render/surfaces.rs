@@ -581,14 +581,11 @@ impl Surfaces {
         self.tiles.remove(tile);
     }
 
-    /// Draws a cached tile image to the target. When `cache_rect` is set, also blits into the
-    /// cache mosaic (`render_from_cache`); omit it when the caller already wrote that tile via
-    /// [`Self::cache_current_tile_texture`].
+    /// Draws a cached tile image to the target.
     pub fn draw_cached_tile_surface(
         &mut self,
         tile: Tile,
         target_rect: skia::Rect,
-        cache_rect: Option<skia::Rect>,
         color: skia::Color,
     ) {
         if let Some(image) = self.tiles.get(tile) {
@@ -604,12 +601,6 @@ impl Surfaces {
                 target_rect,
                 &skia::Paint::default(),
             );
-
-            if let Some(cr) = cache_rect {
-                self.cache
-                    .canvas()
-                    .draw_image_rect(img, None, cr, &skia::Paint::default());
-            }
         }
     }
 

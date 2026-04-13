@@ -709,7 +709,6 @@ impl RenderState {
             self.current_tile
                 .ok_or(Error::CriticalError("Current tile not found".to_string()))?,
             rect,
-            None,
             self.background_color,
         );
         Ok(())
@@ -2609,11 +2608,9 @@ impl RenderState {
                 if self.surfaces.has_cached_tile_surface(current_tile) {
                     performance::begin_measure!("render_shape_tree::cached");
                     let tile_rect = self.get_current_tile_bounds()?;
-                    let cache_tile_rect = self.get_aligned_tile_bounds(current_tile);
                     self.surfaces.draw_cached_tile_surface(
                         current_tile,
                         tile_rect,
-                        Some(cache_tile_rect),
                         self.background_color,
                     );
                     performance::end_measure!("render_shape_tree::cached");

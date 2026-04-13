@@ -948,9 +948,10 @@
         root-id   (:main-instance-id component)]
     (if (and (= tag "component")
              (features/active-feature? state "render-wasm/v1"))
-      ;; WASM: render immediately, UI only — server persist happens
-      ;; on the debounced path (update-component-thumbnail)
-      (dwt.wasm/render-thumbnail file-id page-id root-id)
+      ;; WASM: don't render eagerly here — thumbnails are rendered
+      ;; lazily when visible in the assets panel. Just clear the
+      ;; stale thumbnail so the UI knows it needs a fresh render.
+      (dwt/clear-thumbnail file-id page-id root-id "component")
       (dwt/update-thumbnail file-id page-id root-id tag "update-component-thumbnail-sync"))))
 
 (defn update-component-sync
@@ -1396,9 +1397,10 @@
                                      (if (features/active-feature? @st/state "render-wasm/v1")
                                        (let [component (ctkl/get-component old-data component-id)]
                                          [(touch-component component-id)
-                                          (dwt.wasm/render-thumbnail (:id old-data)
-                                                                     (:main-instance-page component)
-                                                                     (:main-instance-id component))])
+                                          (dwt/clear-thumbnail (:id old-data)
+                                                               (:main-instance-page component)
+                                                               (:main-instance-id component)
+                                                               "component")])
                                        [(touch-component component-id)]))
                                    changed-components)
                            (rx/from)))

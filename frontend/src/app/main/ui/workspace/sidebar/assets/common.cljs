@@ -22,6 +22,7 @@
    [app.main.data.modal :as modal]
    [app.main.data.workspace :as dw]
    [app.main.data.workspace.libraries :as dwl]
+   [app.main.data.workspace.thumbnails-wasm :as dwt.wasm]
    [app.main.data.workspace.undo :as dwu]
    [app.main.data.workspace.variants :as dwv]
    [app.main.features :as features]
@@ -283,6 +284,7 @@
   (let [page-id (:main-instance-page component)
         root-id (:main-instance-id component)
         retry   (mf/use-state 0)
+        wasm?   (features/active-feature? @st/state "render-wasm/v1")
 
         thumbnail-uri*
         (mf/with-memo [file-id page-id root-id]
@@ -299,9 +301,17 @@
            (when (< @retry 3)
              (inc retry))))]
 
+    ;; Lazy WASM thumbnail rendering: when the component becomes
+    ;; visible and has no cached thumbnail, trigger a render.
+    (mf/use-effect
+     (mf/deps is-hidden thumbnail-uri wasm?)
+     (fn []
+       (when (and wasm? (not is-hidden) (nil? thumbnail-uri))
+         (st/emit! (dwt.wasm/render-thumbnail file-id page-id root-id)))))
+
     (if (and (some? thumbnail-uri)
              (or (contains? cf/flags :component-thumbnails)
-                 (features/active-feature? @st/state "render-wasm/v1")))
+                 wasm?))
       [:& component-svg-thumbnail
        {:thumbnail-uri thumbnail-uri
         :class class

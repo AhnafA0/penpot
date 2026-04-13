@@ -709,6 +709,7 @@ impl RenderState {
             self.current_tile
                 .ok_or(Error::CriticalError("Current tile not found".to_string()))?,
             rect,
+            None,
             self.background_color,
         );
         Ok(())
@@ -1555,6 +1556,7 @@ impl RenderState {
         // TILE_SIZE boundary in scaled space, new tiles would map to different slots while old
         // pixels stay put — `render_from_cache` then shows a sheared / shifted composite.
         if self.cached_viewbox.area.width() > 0.0 {
+            println!("1");
             let mosaic_stale = if self.zoom_changed() {
                 true
             } else {
@@ -1562,7 +1564,9 @@ impl RenderState {
                 let snap_cached = cache_mosaic_snap_origin(self.cached_viewbox, cached_scale);
                 snap_now != snap_cached
             };
+            println!("mosaic_stale: {}", mosaic_stale);
             if mosaic_stale {
+                println!("clearing cache");
                 self.surfaces.clear_cache(self.background_color);
                 self.cache_cleared_this_render = true;
             }
@@ -2608,9 +2612,15 @@ impl RenderState {
                 if self.surfaces.has_cached_tile_surface(current_tile) {
                     performance::begin_measure!("render_shape_tree::cached");
                     let tile_rect = self.get_current_tile_bounds()?;
+                    let cache_rect = if self.zoom_changed() {
+                        None
+                    } else {
+                        Some(self.get_aligned_tile_bounds(current_tile))
+                    };
                     self.surfaces.draw_cached_tile_surface(
                         current_tile,
                         tile_rect,
+                        cache_rect,
                         self.background_color,
                     );
                     performance::end_measure!("render_shape_tree::cached");

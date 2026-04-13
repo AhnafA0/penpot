@@ -40,6 +40,7 @@ pub use images::*;
 // This is the extra area used for tile rendering (tiles beyond viewport).
 // Higher values pre-render more tiles, reducing empty squares during pan but using more memory.
 const VIEWPORT_INTEREST_AREA_THRESHOLD: i32 = 3;
+
 const MAX_BLOCKING_TIME_MS: i32 = 32;
 const NODE_BATCH_THRESHOLD: i32 = 3;
 const BLUR_DOWNSCALE_THRESHOLD: f32 = 8.0;
@@ -344,9 +345,10 @@ pub(crate) struct RenderState {
 
 pub fn get_cache_size(viewbox: Viewbox, scale: f32) -> skia::ISize {
     // First we retrieve the extended area of the viewport that we could render.
+    let interest = VIEWPORT_INTEREST_AREA_THRESHOLD;
     let TileRect(isx, isy, iex, iey) = tiles::get_tiles_for_viewbox_with_interest(
         viewbox,
-        VIEWPORT_INTEREST_AREA_THRESHOLD,
+        interest,
         scale,
     );
 
@@ -704,20 +706,24 @@ impl RenderState {
     }
 
     pub fn apply_render_to_final_canvas(&mut self, rect: skia::Rect) -> Result<()> {
+        let fast_mode = self.options.is_fast_mode();
         // Decide *now* (at the first real cache blit) whether we need to clear Cache.
         // This avoids clearing Cache on renders that don't actually paint tiles (e.g. hover/UI),
         // while still preventing stale pixels from surviving across full-quality renders.
-        if !self.options.is_fast_mode() && !self.cache_cleared_this_render {
+        if !fast_mode && !self.cache_cleared_this_render {
             self.surfaces.clear_cache(self.background_color);
             self.cache_cleared_this_render = true;
         }
         let tile_rect = self.get_current_aligned_tile_bounds()?;
+        // In fast mode the viewport is moving (pan/zoom) so Cache surface
+        // positions would be wrong — only save to the tile HashMap.
         self.surfaces.cache_current_tile_texture(
             &self.tile_viewbox,
             &self
                 .current_tile
                 .ok_or(Error::CriticalError("Current tile not found".to_string()))?,
             &tile_rect,
+            fast_mode,
         );
 
         self.surfaces.draw_cached_tile_surface(
@@ -1454,18 +1460,19 @@ impl RenderState {
     pub fn render_from_cache(&mut self, shapes: ShapesPoolRef) {
         let _start = performance::begin_timed_log!("render_from_cache");
         performance::begin_measure!("render_from_cache");
-        let scale = self.get_cached_scale();
+        let cached_scale = self.get_cached_scale();
 
         // Check if we have a valid cached viewbox (non-zero dimensions indicate valid cache)
         if self.cached_viewbox.area.width() > 0.0 {
             // Scale and translate the target according to the cached data
             let navigate_zoom = self.viewbox.zoom / self.cached_viewbox.zoom;
 
+            let interest = VIEWPORT_INTEREST_AREA_THRESHOLD;
             let TileRect(start_tile_x, start_tile_y, _, _) =
                 tiles::get_tiles_for_viewbox_with_interest(
                     self.cached_viewbox,
-                    VIEWPORT_INTEREST_AREA_THRESHOLD,
-                    scale,
+                    interest,
+                    cached_scale,
                 );
             let offset_x = self.viewbox.area.left * self.cached_viewbox.zoom * self.options.dpr();
             let offset_y = self.viewbox.area.top * self.cached_viewbox.zoom * self.options.dpr();
@@ -1487,6 +1494,59 @@ impl RenderState {
 
             // Restore canvas state
             self.surfaces.canvas(SurfaceId::Target).restore();
+
+            // Draw tiles from the HashMap on top of the scaled Cache surface.
+            // Tiles rendered by the background async render at the current
+            // zoom level fill in areas not covered by the old Cache surface
+            // (e.g. edges exposed during zoom-out).
+            let current_scale = self.get_scale();
+            let visible_rect = tiles::get_tiles_for_viewbox(self.viewbox, current_scale);
+            let vb_offset_x = self.viewbox.area.left * current_scale;
+            let vb_offset_y = self.viewbox.area.top * current_scale;
+
+            for tx in visible_rect.x1()..=visible_rect.x2() {
+                for ty in visible_rect.y1()..=visible_rect.y2() {
+                    let tile = tiles::Tile::from(tx, ty);
+                    if self.surfaces.has_cached_tile_surface(tile) {
+                        let tile_rect = skia::Rect::from_xywh(
+                            tx as f32 * tiles::TILE_SIZE - vb_offset_x,
+                            ty as f32 * tiles::TILE_SIZE - vb_offset_y,
+                            tiles::TILE_SIZE,
+                            tiles::TILE_SIZE,
+                        );
+                        self.surfaces
+                            .draw_cached_tile_surface(tile, tile_rect, bg_color);
+                    }
+                }
+            }
+
+            // Start a background render for the new viewport so that
+            // edge tiles get progressively filled in during the zoom
+            // gesture, rather than waiting for the debounced render-finish.
+            if !self.render_in_progress && self.zoom_changed() {
+                // Clear old tiles (rendered at the previous scale / grid)
+                self.surfaces.invalidate_tile_cache();
+
+                // Update tile viewbox for the new viewport
+                self.tile_viewbox.update(self.viewbox, current_scale);
+
+                // Generate pending tiles for the new viewport
+                self.pending_tiles
+                    .update(&self.tile_viewbox, &self.surfaces);
+
+                // Set up render state for the async render
+                self.focus_mode.reset();
+                self.render_in_progress = true;
+                self.current_tile = None;
+                self.pending_nodes.clear();
+                self.cache_cleared_this_render = false;
+                self.nested_fills.clear();
+                self.nested_blurs.clear();
+                self.nested_shadows.clear();
+
+                // Request animation frame to start rendering tiles
+                self.render_request_id = Some(wapi::request_animation_frame!());
+            }
 
             if self.options.is_debug_visible() {
                 debug::render(self);
@@ -1622,7 +1682,15 @@ impl RenderState {
             if tree.len() != 0 {
                 self.render_shape_tree_partial(base_object, tree, timestamp, true)?;
             }
-            self.flush_and_submit();
+
+            // In fast mode (pan/zoom in progress), render_from_cache owns
+            // the Target surface — skip flush so we don't present stale
+            // tile positions.  The rAF still populates the Cache surface
+            // and tile HashMap so render_from_cache progressively shows
+            // more complete content.
+            if !self.options.is_fast_mode() {
+                self.flush_and_submit();
+            }
 
             if self.render_in_progress {
                 self.cancel_animation_frame();
@@ -1668,7 +1736,10 @@ impl RenderState {
             .clear(skia::Color::TRANSPARENT);
 
         if tree.len() != 0 {
-            let shape = tree.get(id).unwrap();
+            let Some(shape) = tree.get(id) else {
+                eprintln!("render_shape_pixels: shape {id} not found in tree");
+                return Ok((Vec::new(), 0, 0));
+            };
             let mut extrect = shape.extrect(tree, scale);
             self.export_context = Some((extrect, scale));
             let margins = self.surfaces.margins;
@@ -2653,8 +2724,11 @@ impl RenderState {
                     // Only allow stopping (yielding) if the current tile is NOT visible.
                     // This ensures all visible tiles render synchronously before showing,
                     // eliminating empty squares during zoom. Interest-area tiles can still yield.
+                    // In fast mode (background render during zoom), all tiles are
+                    // yieldable so we don't block the main thread.
                     let tile_is_visible = self.tile_viewbox.is_visible(&current_tile);
-                    let can_stop = allow_stop && !tile_is_visible;
+                    let can_stop =
+                        allow_stop && (!tile_is_visible || self.options.is_fast_mode());
                     let (is_empty, early_return) =
                         self.render_shape_tree_partial_uncached(tree, timestamp, can_stop, false)?;
 
@@ -2674,7 +2748,10 @@ impl RenderState {
                                 tile_rect,
                             );
                         }
-                    } else {
+                    } else if !self.options.is_fast_mode() {
+                        // In normal mode, draw background for empty tiles.
+                        // In fast mode, skip this to preserve the scaled
+                        // Cache surface content underneath (from render_from_cache).
                         self.surfaces.apply_mut(SurfaceId::Target as u32, |s| {
                             let mut paint = skia::Paint::default();
                             paint.set_color(self.background_color);
@@ -2694,7 +2771,30 @@ impl RenderState {
                 self.update_render_context(next_tile);
 
                 if !self.surfaces.has_cached_tile_surface(next_tile) {
-                    if let Some(ids) = self.tiles.get_shapes_at(next_tile) {
+                    let indexed_ids = self.tiles.get_shapes_at(next_tile);
+
+                    // When the tile has no shapes in the index (e.g. during
+                    // a background render started by render_from_cache before
+                    // a full tile-index rebuild), fall back to scanning root
+                    // shapes for overlap.  This lazily populates the index
+                    // without the cost of a full rebuild.
+                    if indexed_ids.is_none() && self.options.is_fast_mode() {
+                        let scale = self.get_scale();
+                        let tile_world_rect = tiles::get_tile_rect(next_tile, scale);
+                        for root_id in root_ids.iter() {
+                            if let Some(shape) = tree.get(root_id) {
+                                let selrect = shape.selrect();
+                                if selrect.intersects(tile_world_rect) {
+                                    self.tiles.add_shape_at(next_tile, *root_id);
+                                }
+                            }
+                        }
+                    }
+
+                    // Re-fetch after potential lazy index update
+                    let ids = self.tiles.get_shapes_at(next_tile);
+
+                    if let Some(ids) = ids {
                         // Check if any shape on this tile has a background blur.
                         // If so, we need ALL root shapes rendered (not just those
                         // assigned to this tile) because the blur snapshots Current

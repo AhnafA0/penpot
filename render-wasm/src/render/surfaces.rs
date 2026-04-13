@@ -549,6 +549,7 @@ impl Surfaces {
         tile_viewbox: &TileViewbox,
         tile: &Tile,
         tile_rect: &skia::Rect,
+        skip_cache_surface: bool,
     ) {
         let rect = IRect::from_xywh(
             self.margins.width,
@@ -560,13 +561,15 @@ impl Surfaces {
         let tile_image_opt = self.current.image_snapshot_with_bounds(rect);
 
         if let Some(tile_image) = tile_image_opt {
-            // Draw to cache first (takes reference), then move to tile cache
-            self.cache.canvas().draw_image_rect(
-                &tile_image,
-                None,
-                tile_rect,
-                &skia::Paint::default(),
-            );
+            if !skip_cache_surface {
+                // Draw to cache surface for render_from_cache
+                self.cache.canvas().draw_image_rect(
+                    &tile_image,
+                    None,
+                    tile_rect,
+                    &skia::Paint::default(),
+                );
+            }
 
             self.tiles.add(tile_viewbox, tile, tile_image);
         }
